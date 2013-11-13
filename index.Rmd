@@ -1,0 +1,46 @@
+Visualizing Access to Health in an LGA in Nigeria
+========================================================
+
+
+```{r}
+# setwd("~/Code/Nigeria_Hospital_Access/")
+require(rgdal)
+require(RColorBrewer)
+require(raster)
+require(maptools)
+require(ggplot2)
+
+
+nga_pop <- raster('data/nga_pop.tif')
+proj <- nga_pop@crs
+```
+So, we have a gridded population file.
+
+```{r fig.width=7, fig.height=6}
+spplot(nga_pop,
+       at=c(0, 10, 100, 1000, 10000, 100000),
+       col.regions=brewer.pal(5,"Oranges"))
+```
+
+Step 1: subset by LGA. Lets pick Akwa Ibom.
+```{r fig.width=7, fig.height=6}
+wgs84 <- CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")
+nga_shp <- readShapeSpatial("data/nga_states/nga_states.shp", proj4string=wgs84)
+nga_states <- spTransform(nga_shp, nga_pop@crs)
+
+cache_or_call <- function(filename, fun) {
+  if (file.exists(filename)) {
+    readRDS(filename)
+  } else {
+    tmp <- fun()
+    saveRDS(tmp, filename)
+    tmp
+  }
+}
+nga_pop_masked <- cache_or_call(
+  'data/cache/nga_pop_masked.RDS',
+  function () { mask(nga_pop, nga_states) }
+  )
+
+```
+
