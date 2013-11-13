@@ -20,10 +20,7 @@ So, we have a gridded population file.
 spplot(nga_pop,
        at=c(0, 10, 100, 1000, 10000, 100000),
        col.regions=brewer.pal(5,"Oranges"))
-```
 
-Step 1: subset by LGA. Lets pick Akwa Ibom.
-```{r fig.width=7, fig.height=6}
 wgs84 <- CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")
 nga_shp <- readShapeSpatial("data/nga_states/nga_states.shp", proj4string=wgs84)
 nga_states <- spTransform(nga_shp, nga_pop@crs)
@@ -41,6 +38,20 @@ nga_pop_masked <- cache_or_call(
   'data/cache/nga_pop_masked.RDS',
   function () { mask(nga_pop, nga_states) }
   )
-
 ```
+
+Step 1: subset by LGA. Lets pick Akwa Ibom.
+```{r fig.width=7, fig.height=6}
+nga_akwa <- subset(nga_states, Name == "Akwa Ibom")
+nga_akwa_raster <- cache_or_call(
+  'data/cache/nga_akwa_raster.RDS',
+  function() { 
+    bb <- nga_akwa@bbox
+    e <- extent(bb['x','min'], bb['x', 'max'], bb['y', 'min'], bb['y', 'max'])
+    mask(crop(nga_pop, e), nga_akwa)
+  })
+spplot(nga_akwa_raster)
+```
+
+
 
