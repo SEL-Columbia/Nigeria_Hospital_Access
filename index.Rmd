@@ -9,14 +9,16 @@ require(RColorBrewer)
 require(raster)
 require(maptools)
 require(ggplot2)
-
+require(plyr)
+require(stringr)
+require(rasterVis)
 
 nga_pop <- raster('data/nga_pop.tif')
 proj <- nga_pop@crs
 ```
 So, we have a gridded population file.
 
-```{r fig.width=7, fig.height=6}
+```{r, cache=TRUE, fig.width=7, fig.height=6}
 spplot(nga_pop,
        at=c(0, 10, 100, 1000, 10000, 100000),
        col.regions=brewer.pal(5,"Oranges"))
@@ -41,7 +43,7 @@ nga_pop_masked <- cache_or_call(
 ```
 
 Step 1: subset by LGA. Lets pick Akwa Ibom.
-```{r fig.width=7, fig.height=6}
+```{r, cache=TRUE, fig.width=7, fig.height=6}
 nga_akwa <- subset(nga_states, Name == "Akwa Ibom")
 nga_akwa_raster <- cache_or_call(
   'data/cache/nga_akwa_raster.RDS',
@@ -53,5 +55,38 @@ nga_akwa_raster <- cache_or_call(
 spplot(nga_akwa_raster)
 ```
 
+Step 2: Health Facilities
+```{r, cache=TRUE, fig.width=7, fig.height=6}
+nga_health <- read.csv("~/Dropbox/Nigeria/Nigeria 661 Baseline Data Cleaning/in_process_data/nmis/data_774/Health_774_NMIS_Facility.csv")
+akwa_health <- subset(nga_health, state=="Akwa Ibom")
+lat_lng <- colwise(as.numeric)(
+  setNames(ldply(str_split(akwa_health$gps, " "),function(x) { x[1:2]}), 
+           c("y", "x")))
+akwa_health <- SpatialPointsDataFrame(lat_lng, akwa_health)
 
+gplot(nga_akwa_raster) + geom_tile(aes(fill=value)) + scale_fill_continuous(low='white', trans='log10') + geom_point(data=lat_lng, aes(y=y, x=x), color='red', shape='+')
+```
 
+Step 3: distance
+
+```{r, cache=TRUE, fig.width=7, fig.height=6}
+popAgg <- aggregate(nga_akwa_raster, 2)
+popPoints <- as.data.frame(rasterToPoints(popAgg))
+require(RSAGA)
+ahd <- subset(as.data.frame(akwa_health), select=c("x", "y", "short_id"))
+ahd$short_id <- as.character(ahd$short_id)
+
+nearestH <- pick.from.points(popPoints, ahd, radius=2E10)
+merged <- merge(nearestH, ahd, by="short_id", suffixes=c(".pop", ".health"))
+merged$N <- row.names(merged)
+mergedPlotDF <- ddply(idata.frame(merged), .(N), function(df) { 
+  data.frame(
+    x=c(df$x.pop, df$x.health), 
+    y=c(df$y.pop, df$y.health),
+    group=c(df[1,'N'], df[1,'N']),
+    type=c("Population Point", "Health Facility")
+)})
+gplot(nga_akwa_raster) + geom_tile(aes(fill=value)) + 
+  scale_fill_continuous(low="white", trans="log10") + 
+  geom_line(data=mergedPlotDF, aes(x=x, y=y, group=group))
+```
