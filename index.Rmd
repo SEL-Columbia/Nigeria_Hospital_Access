@@ -14,6 +14,7 @@ require(plyr)
 require(stringr)
 require(rasterVis)
 require(rgeos)
+require(RSAGA)
 
 nga_pop <- raster('data/nga_pop.tif')
 proj <- nga_pop@crs
@@ -76,7 +77,7 @@ Step 3: distance
 ```{r, cache=TRUE, fig.width=7, fig.height=6}
 popAgg <- aggregate(nga_akwa_raster, 2)
 popPoints <- as.data.frame(rasterToPoints(popAgg))
-require(RSAGA)
+
 ahd <- subset(as.data.frame(akwa_health), select=c("x", "y", "facility_ID"))
 ahd$facility_ID <- as.character(ahd$facility_ID)
 
@@ -97,20 +98,67 @@ gplot(nga_akwa_raster) + geom_tile(aes(fill=value)) +
 
 Step 4:
 ```{r, cache=TRUE, fig.width=7, fig.height=6}
-nga_akwa_buffer <- gBuffer(nga_akwa, width=0.1)
+nga_akwa_buffer <- gBuffer(nga_akwa, width=0.05)
 # Getting baseline_data within bbox of buffer
 
-ggplot(data=nga_akwa_buffer, aes(x=long, y=lat, group=group)) + geom_polygon(alpha=0.2) + geom_polygon(data=nga_akwa, aes(x=long, y=lat, group=group))
+ggplot(data=nga_akwa_buffer, aes(x=long, y=lat, group=group)) + geom_polygon(alpha=0.2) + 
+    geom_polygon(data=nga_akwa, aes(x=long, y=lat, group=group)) 
 
-nga_akwa_buffer@bbox
-
-#Getting 
-lat_lng <- colwise(as.numeric)(
+#Getting health facilities over the buffe
+lat_lng_akwa <- colwise(as.numeric)(
   setNames(ldply(str_split(nga_health$gps, " "),function(x) { x[1:2]}), 
-           c("y", "x")))
-nga_health_sp <- SpatialPointsDataFrame(lat_lng, nga_health)
+           c("x", "y")))
+# Creating the spatial point df for campare if the points are within the buffer
+nga_health_sp <- SpatialPointsDataFrame(lat_lng_akwa, nga_health, proj4string=nga_pop@crs)
+
+#Getting the geo-code of the facilities over the buffer shape
+lat_lng_akwa <- lat_lng_akwa[!is.na(over(nga_health_sp, nga_akwa_buffer)),]
+
+
+# Plotting
+gplot(nga_akwa_raster) + geom_tile(aes(fill=value)) + 
+    scale_fill_continuous(low='white', trans='log10', na.value=10^-10) + 
+    geom_polygon(data=nga_akwa_buffer, aes(x=long, y=lat), alpha=0.1) + 
+    geom_point(data=lat_lng_akwa, aes(x=x, y=y, color="red", shape='+'))
+
 
 ```
+
+Step 5: repeat step 3 with buffer data
+
+```{r, cache=TRUE, fig.width=7, fig.height=6}
+popAgg <- aggregate(nga_akwa_raster, 2)
+popPoints <- as.data.frame(rasterToPoints(popAgg))
+
+ahd <- subset(as.data.frame(nga_health_sp), 
+              !is.na(over(nga_health_sp, nga_akwa_buffer)), 
+              select=c("x", "y", "facility_ID"))
+
+ahd$facility_ID <- as.character(ahd$facility_ID)
+
+nearestH <- pick.from.points(popPoints, ahd, radius=2E10)
+merged <- merge(nearestH, ahd, by="facility_ID", suffixes=c(".pop", ".health"))
+merged$N <- row.names(merged)
+mergedPlotDF <- ddply(idata.frame(merged), .(N), function(df) { 
+  data.frame(
+    x=c(df$x.pop, df$x.health), 
+    y=c(df$y.pop, df$y.health),
+    group=c(df[1,'N'], df[1,'N']),
+    type=c("Population Point", "Health Facility")
+)})
+
+gplot(nga_akwa_raster) + geom_tile(aes(fill=value)) + 
+  scale_fill_continuous(low="white", trans="log10", na.value=10^-10) + 
+    geom_line(data=mergedPlotDF, aes(x=x, y=y, group=group)) +
+    geom_polygon(data=nga_akwa_buffer, aes(x=long, y=lat), alpha=0.1) + 
+    geom_point(data=popPoints, aes(x=x, y=y), alpha=0.3) + 
+    geom_point(data=lat_lng_akwa, aes(x=x, y=y, shape='+', color="red")) 
+
+    
+```
+
+
+
 
 Pulling the health facility match up result and define the "Best" LGAs
 
