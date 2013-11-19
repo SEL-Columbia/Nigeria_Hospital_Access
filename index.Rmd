@@ -4,6 +4,7 @@ Visualizing Access to Health in an LGA in Nigeria
 
 ```{r}
 # setwd("~/Code/Nigeria_Hospital_Access/")
+setwd("~/work/r/nigeria_hospital_access/")
 require(rgdal)
 require(RColorBrewer)
 require(raster)
@@ -12,6 +13,7 @@ require(ggplot2)
 require(plyr)
 require(stringr)
 require(rasterVis)
+require(rgeos)
 
 nga_pop <- raster('data/nga_pop.tif')
 proj <- nga_pop@crs
@@ -21,7 +23,7 @@ So, we have a gridded population file.
 ```{r, cache=TRUE, fig.width=7, fig.height=6}
 spplot(nga_pop,
        at=c(0, 10, 100, 1000, 10000, 100000),
-       col.regions=brewer.pal(5,"Oranges"))
+       col.regions=brewer.pal(6,"Spectral"))
 
 wgs84 <- CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")
 nga_shp <- readShapeSpatial("data/nga_states/nga_states.shp", proj4string=wgs84)
@@ -52,7 +54,9 @@ nga_akwa_raster <- cache_or_call(
     e <- extent(bb['x','min'], bb['x', 'max'], bb['y', 'min'], bb['y', 'max'])
     mask(crop(nga_pop, e), nga_akwa)
   })
-spplot(nga_akwa_raster)
+spplot(nga_akwa_raster,
+       at=c(0, 10, 100, 1000, 10000, 100000),
+       col.regions=brewer.pal(6,"Spectral"))
 ```
 
 Step 2: Health Facilities
@@ -73,11 +77,11 @@ Step 3: distance
 popAgg <- aggregate(nga_akwa_raster, 2)
 popPoints <- as.data.frame(rasterToPoints(popAgg))
 require(RSAGA)
-ahd <- subset(as.data.frame(akwa_health), select=c("x", "y", "short_id"))
-ahd$short_id <- as.character(ahd$short_id)
+ahd <- subset(as.data.frame(akwa_health), select=c("x", "y", "facility_ID"))
+ahd$facility_ID <- as.character(ahd$facility_ID)
 
 nearestH <- pick.from.points(popPoints, ahd, radius=2E10)
-merged <- merge(nearestH, ahd, by="short_id", suffixes=c(".pop", ".health"))
+merged <- merge(nearestH, ahd, by="facility_ID", suffixes=c(".pop", ".health"))
 merged$N <- row.names(merged)
 mergedPlotDF <- ddply(idata.frame(merged), .(N), function(df) { 
   data.frame(
@@ -89,4 +93,50 @@ mergedPlotDF <- ddply(idata.frame(merged), .(N), function(df) {
 gplot(nga_akwa_raster) + geom_tile(aes(fill=value)) + 
   scale_fill_continuous(low="white", trans="log10") + 
   geom_line(data=mergedPlotDF, aes(x=x, y=y, group=group))
+```
+
+Step 4:
+```{r, cache=TRUE, fig.width=7, fig.height=6}
+nga_akwa_buffer <- gBuffer(nga_akwa, width=0.1)
+# Getting baseline_data within bbox of buffer
+
+ggplot(data=nga_akwa_buffer, aes(x=long, y=lat, group=group)) + geom_polygon(alpha=0.2) + geom_polygon(data=nga_akwa, aes(x=long, y=lat, group=group))
+
+nga_akwa_buffer@bbox
+
+#Getting 
+lat_lng <- colwise(as.numeric)(
+  setNames(ldply(str_split(nga_health$gps, " "),function(x) { x[1:2]}), 
+           c("y", "x")))
+nga_health_sp <- SpatialPointsDataFrame(lat_lng, nga_health)
+
+```
+
+Pulling the health facility match up result and define the "Best" LGAs
+
+```{r, cache=TRUE, fig.width=7, fig.height=6}
+edu_match <- read.csv("~/Dropbox/Nigeria/Nigeria 661 Baseline Data Cleaning/in_process_data/mop_up_matching_result/baseline_matching_health.csv", na.strings="", stringsAsFactors=FALSE)
+
+lgas <- read.csv("~/Dropbox/Nigeria/Nigeria 661 Baseline Data Cleaning/lgas.csv")
+
+facility <- read.csv("~/Dropbox/Nigeria/Nigeria 661 Baseline Data Cleaning//in_process_data/facility_lists/short_id_fixed/FACILITY_LIST_schools_full.csv")
+
+result <- ddply(edu_match, .(nmis_lga_id), summarize, 
+          match_count = length(na.omit(fcl_uuid)),
+          total_baseline = length(fcl_uuid))
+
+facility_count <- ddply(facility, .(lga_id), nrow)
+facility_count <- rename(facility_count, c("V1" = "total_facility"))
+
+edu <- merge(lgas, result, by.y="nmis_lga_id", by.x="lga_id")
+edu <- merge(edu, facility_count, by="lga_id", all=T)
+
+edu$match_vs_baseline <- edu$match_count / edu$total_baseline
+edu$baseline_vs_facility <- edu$total_baseline / edu$total_facility
+edu$match_vs_facility <- edu$match_count / edu$total_facility
+edu$pop_per_facility <- edu$pop_2006 / edu$total_facility
+edu$pop_per_baseline <- edu$pop_2006 / edu$total_baseline
+edu$non_match_bf_ratio <- (edu$total_baseline - edu$match_count) / (edu$total_facility - edu$match_count)
+
+edu <- arrange(edu, desc(edu$baseline_vs_facility))
 ```
