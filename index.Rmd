@@ -165,13 +165,14 @@ mergedPlotDF$Population.Bin <- cut(mergedPlotDF$Population, include.lowest=T,
   breaks=c(1,100,1000,10000,100000),
   labels=c("Below 100", "100-1,000", "1,000-10,000", "> 10,000"))
 
-gplot(nga_akwa_raster) + geom_tile(aes(fill=value)) + 
-  scale_fill_continuous(low="white", trans="log10", na.value='#ffffff00') + 
+gplot(nga_akwa_raster) + 
+#     geom_tile(aes(fill=value)) + 
+#   scale_fill_continuous(low="white", trans="log10", na.value='#ffffff00') + 
     geom_line(data=mergedPlotDF, 
               aes(x=x, y=y, group=group, color=Population.Bin)) +
     scale_color_brewer(palette="PuRd") + 
     geom_polygon(data=nga_akwa_buffer, aes(x=long, y=lat), alpha=0.1) + 
-    geom_point(data=popPoints, aes(x=x, y=y), alpha=0.3) + 
+#     geom_point(data=popPoints, aes(x=x, y=y), alpha=0.3) + 
     geom_point(data=lat_lng_akwa, aes(x=x, y=y),
                shape='+', color="black", size=4.5) + 
     blank_theme() + 
@@ -230,8 +231,8 @@ edu_state$base_complete <- edu_state$baseline_finished/edu_state$baseline_total
 edu_state$idx <- edu_state$base_facil + edu_state$match_facil + edu_state$facil_complete
 
 edu_state$idx2 <- (0.7*order(edu_state$base_facil, decreasing=F) + 
-                   0.5*order(edu_state$match_facil, decreasing=F) -
-                    0.2*order(edu_state$match_facil, decreasing=T))
+                   0.5*order(edu_state$match_facil, decreasing=F) +
+                    0.2*order(edu_state$facil_complete, decreasing=F))
 
 edu_state <- arrange(edu_state, desc(idx2))
 ```
