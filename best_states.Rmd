@@ -1,0 +1,80 @@
+Title
+========================================================
+Pulling the health facility match up result and define the "Best" LGAs
+
+
+```{r, cache=TRUE, fig.width=7, fig.height=6}
+# Loading matching status data from nmis dump
+require(RJSONIO)
+require(plyr)
+require(ggplot2)
+
+baseline_status <- fromJSON("~/Dropbox/Nigeria/Nigeria 661 Baseline Data Cleaning/in_process_data/mop_up_matching_result/Matching status/nmis_by_lga.json", simplifyWithNames=T)
+
+baseline_status <- do.call("rbind.fill", lapply(baseline_status, as.data.frame, stringsAsFactors=F))
+
+baseline_status <- subset(baseline_status, select=c("lga_id", "health_total", "health_finished", "health_matched"))
+baseline_status <- rename(baseline_status, 
+                          c("health_total" = "baseline_total",
+                            "health_matched" = "matched",
+                            "health_finished" = "baseline_finished"))
+
+
+facility_status <- fromJSON("~/Dropbox/Nigeria/Nigeria 661 Baseline Data Cleaning/in_process_data/mop_up_matching_result/Matching status/lga_by_lga.json", simplifyWithNames=T)
+
+facility_status <- do.call("rbind.fill", lapply(facility_status, as.data.frame, stringsAsFactors=F))
+
+facility_status <- subset(facility_status, select=c("lga_id", "health_total", "health_finished"))
+facility_status <- rename(facility_status, 
+                          c("health_total" = "facility_total",
+                            "health_finished" = "facility_finished"))
+
+
+# Load lga info
+lgas <- read.csv("~/Dropbox/Nigeria/Nigeria 661 Baseline Data Cleaning/lgas.csv")
+
+edu <- merge(lgas, baseline_status, by="lga_id", all=T)
+edu <- merge(edu, facility_status, by="lga_id", all=T)
+edu$error <- (edu$facility_total/edu$baseline_total < 0.7 | 
+                                      is.infinite(facility_total/baseline_total) | 
+                                      is.na(facility_total/baseline_total))
+
+
+edu_state <- ddply(edu, .(state), summarize,
+             match_count = sum(matched, na.rm=T),
+             baseline_total = sum(baseline_total, na.rm=T),
+             baseline_finished = sum(baseline_finished, na.rm=T),
+             facility_total = sum(facility_total, na.rm=T),
+             facility_finished = sum(facility_finished, na.rm=T),
+             coverage_error = sum(error)
+              )
+
+edu_state$base_facil <- edu_state$baseline_total/edu_state$facility_total
+edu_state$match_facil <- edu_state$match_count/edu_state$facility_total
+edu_state$facil_complete <- edu_state$facility_finished/edu_state$facility_total
+edu_state$base_complete <- edu_state$baseline_finished/edu_state$baseline_total
+edu_state$match_base <- edu_state$match_count/edu_state$baseline_total
+edu_state$facil_base <- edu_state$facility_total/edu_state$baseline_total
+
+edu_state$idx <- edu_state$base_facil + edu_state$match_facil + edu_state$facil_complete
+
+edu_state$idx2 <- (0.7*order(edu_state$base_facil, decreasing=F) + 
+                   0.5*order(edu_state$match_facil, decreasing=F) +
+                    0.2*order(edu_state$facil_complete, decreasing=F))
+
+edu_state <- arrange(edu_state, desc(idx2))
+
+
+
+
+
+
+
+
+#####
+ggplot(edu, aes(baseline_total, facility_total)) + geom_point() +
+  ylim(0, 300) + xlim(0, 300) +
+  geom_abline(intercept = 0, slope = 1) + 
+  geom_abline(intercept = 0, slope = 0.7, color = "red") 
+
+```
