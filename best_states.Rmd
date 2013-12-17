@@ -31,13 +31,13 @@ facility_status <- rename(facility_status,
 
 
 # Load lga info
-lgas <- read.csv("~/Dropbox/Nigeria/Nigeria 661 Baseline Data Cleaning/lgas.csv")
+lgas <- read.csv("~/Dropbox/Nigeria/Nigeria 661 Baseline Data Cleaning/lgas.csv", stringsAsFactors=F)
 
 edu <- merge(lgas, baseline_status, by="lga_id", all=T)
 edu <- merge(edu, facility_status, by="lga_id", all=T)
 edu$error <- (edu$facility_total/edu$baseline_total < 0.7 | 
-                                      is.infinite(facility_total/baseline_total) | 
-                                      is.na(facility_total/baseline_total))
+                                      is.infinite(edu$facility_total/edu$baseline_total) | 
+                                      is.na(edu$facility_total/edu$baseline_total))
 
 
 edu_state <- ddply(edu, .(state), summarize,
@@ -55,14 +55,20 @@ edu_state$facil_complete <- edu_state$facility_finished/edu_state$facility_total
 edu_state$base_complete <- edu_state$baseline_finished/edu_state$baseline_total
 edu_state$match_base <- edu_state$match_count/edu_state$baseline_total
 edu_state$facil_base <- edu_state$facility_total/edu_state$baseline_total
+edu_state$total_non_match_vs_facil <- (edu_state$facility_total + edu_state$baseline_total - 2*edu_state$match_count)/edu_state$facility_total
 
 edu_state$idx <- edu_state$base_facil + edu_state$match_facil + edu_state$facil_complete
 
-edu_state$idx2 <- (0.7*order(edu_state$base_facil, decreasing=F) + 
-                   0.5*order(edu_state$match_facil, decreasing=F) +
-                    0.2*order(edu_state$facil_complete, decreasing=F))
+range01 <- function(x){(x-min(x))/(max(x)-min(x))}
+edu_state$std_error_cov <- range01(edu_state$coverage_error)
 
-edu_state <- arrange(edu_state, desc(idx2))
+edu_state$idx2 <- (0.7*order(edu_state$match_facil, decreasing=F) + 
+                   0.4*order(edu_state$facil_base, decreasing=T) +
+                    0.3*order(edu_state$total_non_match_vs_facil, decreasing=T))
+edu_state$idx2_adj <- edu_state$idx2 - edu_state$std_error_cov * quantile(edu_state$idx2, probs=0.5) 
+
+
+edu_state <- arrange(edu_state, desc(idx2_adj))
 
 
 
