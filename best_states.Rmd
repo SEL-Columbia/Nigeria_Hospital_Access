@@ -2,15 +2,18 @@ Title
 ========================================================
 Pulling the health facility match up result and define the "Best" LGAs
 
-
-```{r, cache=TRUE, fig.width=7, fig.height=6}
+Step1: preparing raw data from Json files
+-----------------------------------------
+```{r, echo=TRUE, eval=TRUE, message=FALSE}
 # Loading matching status data from nmis dump
 require(RJSONIO)
 require(plyr)
 require(ggplot2)
 
+# pulling Myf's matching data 
 baseline_status <- fromJSON("~/Dropbox/Nigeria/Nigeria 661 Baseline Data Cleaning/in_process_data/mop_up_matching_result/Matching status/nmis_by_lga.json", simplifyWithNames=T)
 
+# call rbind.fill on list of dfs
 baseline_status <- do.call("rbind.fill", lapply(baseline_status, as.data.frame, stringsAsFactors=F))
 
 baseline_status <- subset(baseline_status, select=c("lga_id", "health_total", "health_finished", "health_matched"))
@@ -29,18 +32,28 @@ facility_status <- rename(facility_status,
                           c("health_total" = "facility_total",
                             "health_finished" = "facility_finished"))
 
-
+```
+Step2: combine data from all sources
+-------------------------------------
+* Joined baseline & facility data
+* define coverage error by facility/baseline < 0.7 or NA or Inf in the ratio
+```{r}
 # Load lga info
 lgas <- read.csv("~/Dropbox/Nigeria/Nigeria 661 Baseline Data Cleaning/lgas.csv", stringsAsFactors=F)
 
-edu <- merge(lgas, baseline_status, by="lga_id", all=T)
-edu <- merge(edu, facility_status, by="lga_id", all=T)
-edu$error <- (edu$facility_total/edu$baseline_total < 0.7 | 
-                                      is.infinite(edu$facility_total/edu$baseline_total) | 
-                                      is.na(edu$facility_total/edu$baseline_total))
+health <- merge(lgas, baseline_status, by="lga_id", all=T)
+health <- merge(health, facility_status, by="lga_id", all=T)
+health$error <- (health$facility_total/health$baseline_total < 0.7 | 
+              is.infinite(health$facility_total/health$baseline_total) | 
+              is.na(health$facility_total/health$baseline_total))
+summary(health$facility_total)
+summary(health$baseline_total)
+summary(health$error)
+```
 
-
-edu_state <- ddply(edu, .(state), summarize,
+Step 3: Aggregate and get the state level
+```{r}
+health_state <- ddply(health, .(state), summarize,
              match_count = sum(matched, na.rm=T),
              baseline_total = sum(baseline_total, na.rm=T),
              baseline_finished = sum(baseline_finished, na.rm=T),
@@ -49,26 +62,27 @@ edu_state <- ddply(edu, .(state), summarize,
              coverage_error = sum(error)
               )
 
-edu_state$base_facil <- edu_state$baseline_total/edu_state$facility_total
-edu_state$match_facil <- edu_state$match_count/edu_state$facility_total
-edu_state$facil_complete <- edu_state$facility_finished/edu_state$facility_total
-edu_state$base_complete <- edu_state$baseline_finished/edu_state$baseline_total
-edu_state$match_base <- edu_state$match_count/edu_state$baseline_total
-edu_state$facil_base <- edu_state$facility_total/edu_state$baseline_total
-edu_state$total_non_match_vs_facil <- (edu_state$facility_total + edu_state$baseline_total - 2*edu_state$match_count)/edu_state$facility_total
+health_state$base_facil <- health_state$baseline_total/health_state$facility_total
+health_state$match_facil <- health_state$match_count/health_state$facility_total
+health_state$facil_complete <- health_state$facility_finished/health_state$facility_total
+health_state$base_complete <- health_state$baseline_finished/health_state$baseline_total
+health_state$match_base <- health_state$match_count/health_state$baseline_total
+health_state$facil_base <- health_state$facility_total/health_state$baseline_total
+health_state$total_non_match_vs_facil <- (health_state$facility_total + health_state$baseline_total - 2*health_state$match_count)/health_state$facility_total
 
-edu_state$idx <- edu_state$base_facil + edu_state$match_facil + edu_state$facil_complete
+health_state$idx <- health_state$base_facil + health_state$match_facil + health_state$facil_complete
 
 range01 <- function(x){(x-min(x))/(max(x)-min(x))}
-edu_state$std_error_cov <- range01(edu_state$coverage_error)
+health_state$std_error_cov <- range01(health_state$coverage_error)
 
-edu_state$idx2 <- (0.7*order(edu_state$match_facil, decreasing=F) + 
-                   0.4*order(edu_state$facil_base, decreasing=T) +
-                    0.3*order(edu_state$total_non_match_vs_facil, decreasing=T))
-edu_state$idx2_adj <- edu_state$idx2 - edu_state$std_error_cov * quantile(edu_state$idx2, probs=0.5) 
+health_state$idx2 <- (0.7*order(health_state$match_facil, decreasing=F) + 
+                   0.4*order(health_state$facil_base, decreasing=T) +
+                    0.3*order(health_state$total_non_match_vs_facil, decreasing=T))
+health_state$idx2_adj <- health_state$idx2 - health_state$std_error_cov * quantile(health_state$idx2, probs=0.5) 
 
 
-edu_state <- arrange(edu_state, desc(idx2_adj))
+health_state <- arrange(health_state, desc(idx2_adj))
+```
 
 
 
@@ -78,7 +92,7 @@ edu_state <- arrange(edu_state, desc(idx2_adj))
 
 
 #####
-ggplot(edu, aes(baseline_total, facility_total)) + geom_point() +
+ggplot(health, aes(baseline_total, facility_total)) + geom_point() +
   ylim(0, 300) + xlim(0, 300) +
   geom_abline(intercept = 0, slope = 1) + 
   geom_abline(intercept = 0, slope = 0.7, color = "red") 
