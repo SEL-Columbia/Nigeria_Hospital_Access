@@ -67,7 +67,6 @@ Step 4: Creating new indicators for ranking the states
 ------------------------------------------------
 ```{r}
 health_state$base_facil <- health_state$baseline_total/health_state$facility_total
-summary(health_state$match_facil)
 health_state$match_facil <- health_state$match_count/health_state$facility_total
 health_state$facil_complete <- health_state$facility_finished/health_state$facility_total
 health_state$base_complete <- health_state$baseline_finished/health_state$baseline_total
@@ -79,10 +78,10 @@ health_state$total_non_match_vs_facil <- (health_state$facility_total + health_s
 # creating standardize function to conver indices to 0-1 range
 range01 <- function(x){(x-min(x))/(max(x)-min(x))}
 health_state$std_error_cov <- range01(health_state$coverage_error)
-
 ```
 
 Step 5: Creating index of data quality
+---------------------------------------
 * first priority: high matched facilities in facility list 
 * second priority: high facility over baseline ratio 
 * last criterior: relatively low un-matched facility vs total facility count
@@ -105,7 +104,7 @@ health_state <- arrange(health_state, desc(idx2_adj))
 
 
 
-
+```{r}
 #####
 ggplot(health, aes(baseline_total, facility_total)) + geom_point() +
   ylim(0, 300) + xlim(0, 300) +
