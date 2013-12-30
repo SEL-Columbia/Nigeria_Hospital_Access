@@ -52,7 +52,7 @@ summary(health$error)
 ```
 
 Step 3: Aggregate and get the state level
-```{r}
+```{r, message=FALSE}
 health_state <- ddply(health, .(state), summarize,
              match_count = sum(matched, na.rm=T),
              baseline_total = sum(baseline_total, na.rm=T),
@@ -61,26 +61,41 @@ health_state <- ddply(health, .(state), summarize,
              facility_finished = sum(facility_finished, na.rm=T),
              coverage_error = sum(error)
               )
+```
 
+Step 4: Creating new indicators for ranking the states
+------------------------------------------------
+```{r}
 health_state$base_facil <- health_state$baseline_total/health_state$facility_total
+summary(health_state$match_facil)
 health_state$match_facil <- health_state$match_count/health_state$facility_total
 health_state$facil_complete <- health_state$facility_finished/health_state$facility_total
 health_state$base_complete <- health_state$baseline_finished/health_state$baseline_total
 health_state$match_base <- health_state$match_count/health_state$baseline_total
 health_state$facil_base <- health_state$facility_total/health_state$baseline_total
+# getting total un-matched facility count vs facicity total
 health_state$total_non_match_vs_facil <- (health_state$facility_total + health_state$baseline_total - 2*health_state$match_count)/health_state$facility_total
 
-health_state$idx <- health_state$base_facil + health_state$match_facil + health_state$facil_complete
-
+# creating standardize function to conver indices to 0-1 range
 range01 <- function(x){(x-min(x))/(max(x)-min(x))}
 health_state$std_error_cov <- range01(health_state$coverage_error)
 
+```
+
+Step 5: Creating index of data quality
+* first priority: high matched facilities in facility list 
+* second priority: high facility over baseline ratio 
+* last criterior: relatively low un-matched facility vs total facility count
+
+```{r}
 health_state$idx2 <- (0.7*order(health_state$match_facil, decreasing=F) + 
                    0.4*order(health_state$facil_base, decreasing=T) +
                     0.3*order(health_state$total_non_match_vs_facil, decreasing=T))
+
+```
+* penalty: penalize the index by median multiply by the standardized coverage error
+```{r}
 health_state$idx2_adj <- health_state$idx2 - health_state$std_error_cov * quantile(health_state$idx2, probs=0.5) 
-
-
 health_state <- arrange(health_state, desc(idx2_adj))
 ```
 
